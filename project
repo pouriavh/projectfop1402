@@ -1,0 +1,353 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct Alias
+{
+    char name[100];
+    char command[100];
+    struct Alias *next;
+};
+
+struct GitConfig
+{
+    char config_file[100];
+    char username[100];
+    char email[100];
+    struct Alias *aliases;
+};
+
+void load_config(struct GitConfig *config);
+void save_config(struct GitConfig *config);
+void set_username(struct GitConfig *config, const char *username);
+void set_email(struct GitConfig *config, const char *email);
+void set_alias(struct GitConfig *config, const char *alias_name, const char *command);
+void execute_alias(struct GitConfig *config, const char *alias_name);
+void initialize_repository();
+void add_to_stage(const char *file_path);
+void reset_file(const char *file_path);
+void undo_last_stage();
+void add_with_wildcard(const char *wildcard);
+void reset_with_wildcard(const char *wildcard);
+void status();
+
+int main()
+{
+    struct GitConfig config;
+    strcpy(config.config_file, "/path/to/.mygitconfig");
+    config.aliases = NULL;
+    load_config(&config);
+
+    char command[100];
+    while (1)
+    {
+        printf("Enter 'exagit' followed by a command (type 'help' for available commands): ");
+        fgets(command, sizeof(command), stdin);
+        command[strcspn(command, "\n")] = 0;
+
+        if (strlen(command) == 0)
+        {
+            continue;
+        }
+
+        char *token = strtok(command, " ");
+        if (strcmp(token, "exagit") != 0)
+        {
+            printf("Invalid command. Please start with 'exagit'. Type 'help' for available commands.\n");
+            continue;
+        }
+
+        token = strtok(NULL, " ");
+        if (token == NULL)
+        {
+            printf("Invalid command. Please enter a command after 'exagit'. Type 'help' for available commands.\n");
+            continue;
+        }
+
+        if (strcmp(token, "exit") == 0)
+        {
+            printf("Exiting...\n");
+            break;
+        }
+        else if (strcmp(token, "help") == 0)
+        {
+            printf("Available commands:\n");
+            printf("exagit config --global user.name <username>\n");
+            printf("exagit config --global user.email <email>\n");
+            printf("exagit config (--global) alias.<alias-name> <command>\n");
+            printf("exagit run <alias-name>\n");
+            printf("exagit init\n");
+            printf("exagit add <file address or directory address>\n");
+            printf("exagit add <wildcard>\n");
+            printf("exagit add -f <file1> <file2> <dir1>\n");
+            printf("exagit reset <file address or directory address>\n");
+            printf("exagit reset <wildcard>\n");
+            printf("exagit reset -f <file1> <file2> <dir1>\n");
+            printf("exagit reset -undo\n");
+            printf("exagit status\n");
+        }
+        else if (strcmp(token, "config") == 0)
+        {
+            token = strtok(NULL, " ");
+            if (token == NULL)
+            {
+                printf("Invalid command format. Type 'help' for usage.\n");
+                continue;
+            }
+            if (strcmp(token, "--global") == 0)
+            {
+                token = strtok(NULL, " ");
+                if (token == NULL)
+                {
+                    printf("Invalid command format. Type 'help' for usage.\n");
+                    continue;
+                }
+            }
+            if (strcmp(token, "alias") == 0)
+            {
+                token = strtok(NULL, " ");
+                if (token == NULL)
+                {
+                    printf("Invalid command format. Type 'help' for usage.\n");
+                    continue;
+                }
+                char *alias_name = token + strlen("alias.");
+                token = strtok(NULL, "");
+                if (token == NULL)
+                {
+                    printf("Invalid command format. Type 'help' for usage.\n");
+                    continue;
+                }
+                set_alias(&config, alias_name, token);
+            }
+            else if (strcmp(token, "user.name") == 0)
+            {
+                token = strtok(NULL, "");
+                if (token == NULL)
+                {
+                    printf("Invalid command format. Type 'help' for usage.\n");
+                    continue;
+                }
+                set_username(&config, token);
+            }
+            else if (strcmp(token, "user.email") == 0)
+            {
+                token = strtok(NULL, "");
+                if (token == NULL)
+                {
+                    printf("Invalid command format. Type 'help' for usage.\n");
+                    continue;
+                }
+                set_email(&config, token);
+            }
+            else
+            {
+                printf("Invalid command format. Type 'help' for usage.\n");
+            }
+        }
+        else if (strcmp(token, "run") == 0)
+        {
+            token = strtok(NULL, " ");
+            if (token == NULL)
+            {
+                printf("Usage: exagit run <alias-name>\n");
+                continue;
+            }
+            execute_alias(&config, token);
+        }
+        else if (strcmp(token, "init") == 0)
+        {
+            initialize_repository();
+        }
+        else if (strcmp(token, "add") == 0)
+        {
+            token = strtok(NULL, " ");
+            if (token == NULL)
+            {
+                printf("Invalid command format. Type 'help' for usage.\n");
+                continue;
+            }
+            if (strcmp(token, "-f") == 0)
+            {
+                while ((token = strtok(NULL, " ")) != NULL)
+                {
+                    add_to_stage(token);
+                }
+            }
+            else
+            {
+                add_to_stage(token);
+            }
+        }
+        else if (strcmp(token, "reset") == 0)
+        {
+            token = strtok(NULL, " ");
+            if (token == NULL)
+            {
+                printf("Invalid command format. Type 'help' for usage.\n");
+                continue;
+            }
+            if (strcmp(token, "-undo") == 0)
+            {
+                undo_last_stage();
+            }
+            else if (strcmp(token, "-f") == 0)
+            {
+                while ((token = strtok(NULL, " ")) != NULL)
+                {
+                    reset_file(token);
+                }
+            }
+            else
+            {
+                reset_file(token);
+            }
+        }
+        else if (strcmp(token, "status") == 0)
+        {
+            status();
+        }
+        else
+        {
+            printf("Invalid command. Type 'help' for available commands.\n");
+        }
+    }
+
+    struct Alias *current_alias = config.aliases;
+    while (current_alias != NULL)
+    {
+        struct Alias *temp = current_alias;
+        current_alias = current_alias->next;
+        free(temp);
+    }
+
+    return 0;
+}
+
+void load_config(struct GitConfig *config)
+{
+    FILE *file = fopen(config->config_file, "r");
+    if (file != NULL)
+    {
+        char line[256];
+        while (fgets(line, sizeof(line), file))
+        {
+            char *key = strtok(line, "=");
+            char *value = strtok(NULL, "=");
+            if (strcmp(key, "user.name") == 0)
+            {
+                strcpy(config->username, value);
+            }
+            else if (strcmp(key, "user.email") == 0)
+            {
+                strcpy(config->email, value);
+            }
+            else if (strstr(key, "alias.") != NULL)
+            {
+                struct Alias *new_alias = malloc(sizeof(struct Alias));
+                strcpy(new_alias->name, key + strlen("alias."));
+                strcpy(new_alias->command, value);
+                new_alias->next = config->aliases;
+                config->aliases = new_alias;
+            }
+        }
+        fclose(file);
+    }
+}
+
+void save_config(struct GitConfig *config)
+{
+    FILE *file = fopen(config->config_file, "w");
+    if (file != NULL)
+    {
+        fprintf(file, "user.name=%s\n", config->username);
+        fprintf(file, "user.email=%s\n", config->email);
+        struct Alias *current_alias = config->aliases;
+        while (current_alias != NULL)
+        {
+            fprintf(file, "alias.%s=%s\n", current_alias->name, current_alias->command);
+            current_alias = current_alias->next;
+        }
+        fclose(file);
+    }
+}
+
+void set_username(struct GitConfig *config, const char *username)
+{
+    strcpy(config->username, username);
+    save_config(config);
+}
+
+void set_email(struct GitConfig *config, const char *email)
+{
+    strcpy(config->email, email);
+    save_config(config);
+}
+
+void set_alias(struct GitConfig *config, const char *alias_name, const char *command)
+{
+    struct Alias *new_alias = malloc(sizeof(struct Alias));
+    strcpy(new_alias->name, alias_name);
+    strcpy(new_alias->command, command);
+    new_alias->next = config->aliases;
+    config->aliases = new_alias;
+    save_config(config);
+}
+
+void execute_alias(struct GitConfig *config, const char *alias_name)
+{
+    struct Alias *current_alias = config->aliases;
+    while (current_alias != NULL)
+    {
+        if (strcmp(current_alias->name, alias_name) == 0)
+        {
+            system(current_alias->command);
+            return;
+        }
+        current_alias = current_alias->next;
+    }
+    printf("Error: Alias not found.\n");
+}
+
+void initialize_repository()
+{
+    system("git init");
+}
+
+void add_to_stage(const char *file_path)
+{
+    char command[200];
+    snprintf(command, sizeof(command), "git add %s", file_path);
+    system(command);
+}
+
+void reset_file(const char *file_path)
+{
+    char command[200];
+    snprintf(command, sizeof(command), "git checkout -- %s", file_path);
+    system(command);
+}
+
+void undo_last_stage()
+{
+    system("git reset HEAD -- .");
+}
+
+void add_with_wildcard(const char *wildcard)
+{
+    char command[200];
+    snprintf(command, sizeof(command), "git add %s", wildcard);
+    system(command);
+}
+
+void reset_with_wildcard(const char *wildcard)
+{
+    char command[200];
+    snprintf(command, sizeof(command), "git checkout -- %s", wildcard);
+    system(command);
+}
+
+void status()
+{
+    system("git status");
+}
